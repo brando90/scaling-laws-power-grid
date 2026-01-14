@@ -12,11 +12,13 @@ CAPACITY_MAX_MWH = 50000.0
 LOGSPACE_POINTS = 50
 BLOCK_START_HOUR = 17.0
 BLOCK_DURATION_HOURS = 4.0
+EFFECTIVE_CAPACITY_FACTOR = 0.75
 OUTPUT_PATH = "bounded_scaling_viz.png"
 
 
 def generate_duck_curve(num_points: int = NUM_POINTS) -> tuple[np.ndarray, np.ndarray]:
     time_hours = np.linspace(0.0, HOURS_PER_DAY, num_points, endpoint=False)
+    # Phase shift to align the peak window with early evening hours.
     time_rad = 2 * np.pi * (time_hours - 12.0) / HOURS_PER_DAY
     load_mw = 12000 + 6000 * np.sin(time_rad) - 4000 * np.cos(2 * time_rad)
     load_mw = np.clip(load_mw, 0.0, None)
@@ -65,7 +67,8 @@ def simulate_bounds(load_curve: np.ndarray, capacity_mwh: float) -> tuple[float,
     pess_curve[block_mask] = pess_curve[block_mask] - discharge_power
     peak_pess = float(pess_curve.max())
 
-    peak_exp = 0.5 * (peak_opt + peak_pess)
+    effective_capacity = capacity_mwh * EFFECTIVE_CAPACITY_FACTOR
+    peak_exp = solve_optimal_ceiling(load_curve, effective_capacity, dt_hours)
     return peak_opt, peak_pess, peak_exp
 
 
@@ -173,8 +176,8 @@ def main() -> None:
     peaks_pess = np.array(peaks_pess)
     peaks_exp = np.array(peaks_exp)
 
-    if not np.all(peaks_opt <= peaks_pess + 1e-8):
-        raise ValueError("Self-check failed: optimistic bound exceeds pessimistic bound.")
+    if not np.all((peaks_opt <= peaks_exp + 1e-8) & (peaks_exp <= peaks_pess + 1e-8)):
+        raise ValueError("Self-check failed: expected bound not between optimistic and pessimistic bounds.")
 
     _, alpha_opt = fit_power_law(capacities, peaks_opt)
     _, alpha_pess = fit_power_law(capacities, peaks_pess)
