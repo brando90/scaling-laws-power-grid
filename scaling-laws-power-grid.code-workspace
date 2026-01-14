@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../uv_envs"
+		},
+		{
+			"path": "../veribench"
+		}
+	],
+	"settings": {}
+}
