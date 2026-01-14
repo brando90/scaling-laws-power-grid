@@ -4,6 +4,17 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.ticker import MaxNLocator, StrMethodFormatter
+
+BASE_LOAD_MW = 12000
+PEAK_LOAD_MW = 19000
+CLIFF_CHECK_BLOCK_MW = 1000
+ANNOTATION_BOX = dict(
+    boxstyle="round,pad=0.25",
+    facecolor="white",
+    edgecolor="none",
+    alpha=0.85,
+)
 
 
 def build_toy_fleet() -> pd.DataFrame:
@@ -67,16 +78,24 @@ def price_at(
     return float(prices[idx])
 
 
-def plot_merit_order(df: pd.DataFrame, output_path: str) -> None:
-    total_capacity = int(df["capacity_mw"].sum())
-    max_price = float(df["marginal_cost"].max())
-
+def step_arrays(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     edges = np.concatenate(([0], df["cum_capacity_mw"].to_numpy()))
     prices = df["marginal_cost"].to_numpy()
     x_step = edges
     y_step = np.concatenate((prices, [prices[-1]]))
+    return edges, prices, x_step, y_step
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+
+def plot_merit_order(df: pd.DataFrame, output_path: str) -> None:
+    total_capacity = int(df["capacity_mw"].sum())
+    max_price = float(df["marginal_cost"].max())
+
+    edges, prices, x_step, y_step = step_arrays(df)
+
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("#f7f5f0")
+    ax.set_axisbelow(True)
 
     for _, row in df.iterrows():
         start = float(row["start_capacity_mw"])
@@ -92,7 +111,7 @@ def plot_merit_order(df: pd.DataFrame, output_path: str) -> None:
 
     ax.step(x_step, y_step, where="post", color="black", linewidth=2)
 
-    label_offset = max_price * 0.02
+    label_offset = max(5.0, max_price * 0.02)
     for _, row in df.iterrows():
         start = float(row["start_capacity_mw"])
         end = float(row["cum_capacity_mw"])
@@ -106,29 +125,36 @@ def plot_merit_order(df: pd.DataFrame, output_path: str) -> None:
             fontsize=9,
         )
 
-    base_load = 12000
-    peak_load = 19000
-    base_price = price_at(base_load, edges, prices, boundary="right")
-    peak_price = price_at(peak_load, edges, prices, boundary="right")
+    base_price = price_at(BASE_LOAD_MW, edges, prices, boundary="right")
+    peak_price = price_at(PEAK_LOAD_MW, edges, prices, boundary="right")
 
-    ax.axvline(base_load, color="gray", linestyle="--", linewidth=1)
-    ax.axvline(peak_load, color="gray", linestyle="--", linewidth=1)
+    ax.axvline(BASE_LOAD_MW, color="#5c677d", linestyle="--", linewidth=1)
+    ax.axvline(PEAK_LOAD_MW, color="#5c677d", linestyle="--", linewidth=1)
+    ax.scatter(
+        [BASE_LOAD_MW, PEAK_LOAD_MW],
+        [base_price, peak_price],
+        color="#5c677d",
+        s=28,
+        zorder=5,
+    )
 
     ax.annotate(
-        f"Base Load = {base_load:,} MW\nPrice ~${int(base_price)}/MWh",
-        xy=(base_load, base_price),
-        xytext=(base_load + 700, base_price + 20),
-        arrowprops=dict(arrowstyle="->", color="gray"),
+        f"Base Load = {BASE_LOAD_MW:,} MW\nPrice ~${int(base_price)}/MWh",
+        xy=(BASE_LOAD_MW, base_price),
+        xytext=(BASE_LOAD_MW + 700, base_price + 20),
+        arrowprops=dict(arrowstyle="->", color="#5c677d"),
         fontsize=9,
         ha="left",
+        bbox=ANNOTATION_BOX,
     )
     ax.annotate(
-        f"Peak Load = {peak_load:,} MW\nPrice ~${int(peak_price)}/MWh",
-        xy=(peak_load, peak_price),
-        xytext=(peak_load + 700, peak_price + 40),
-        arrowprops=dict(arrowstyle="->", color="gray"),
+        f"Peak Load = {PEAK_LOAD_MW:,} MW\nPrice ~${int(peak_price)}/MWh",
+        xy=(PEAK_LOAD_MW, peak_price),
+        xytext=(PEAK_LOAD_MW + 700, peak_price + 40),
+        arrowprops=dict(arrowstyle="->", color="#5c677d"),
         fontsize=9,
         ha="left",
+        bbox=ANNOTATION_BOX,
     )
 
     gas_cc_end = float(
@@ -148,17 +174,25 @@ def plot_merit_order(df: pd.DataFrame, output_path: str) -> None:
         arrowprops=dict(arrowstyle="->", color="black"),
         fontsize=10,
         ha="left",
+        bbox=ANNOTATION_BOX,
     )
 
-    ax.set_title("Merit Order Supply Curve (Toy Fleet)")
+    ax.set_title("Merit Order Supply Curve (Toy Fleet)", pad=12, weight="bold")
     ax.set_xlabel("Cumulative Capacity (MW)")
     ax.set_ylabel("Marginal Cost ($/MWh)")
     ax.set_xlim(0, total_capacity + 500)
     ax.set_ylim(0, max_price * 1.12)
-    ax.grid(alpha=0.3, linestyle="--", linewidth=0.5)
+    ax.grid(alpha=0.35, linestyle="--", linewidth=0.6, color="#9aa0a6")
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=8, integer=True))
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=7, integer=True))
+    ax.xaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
+    ax.yaxis.set_major_formatter(StrMethodFormatter("${x:,.0f}"))
+    ax.tick_params(axis="both", labelsize=9)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -170,15 +204,14 @@ def main() -> None:
     assert total_capacity == 21000
     assert max_price == 300
 
-    edges = np.concatenate(([0], df["cum_capacity_mw"].to_numpy()))
-    prices = df["marginal_cost"].to_numpy()
+    edges, prices, _, _ = step_arrays(df)
 
-    # Bin the demand to emphasize discrete jumps in the toy curve.
+    # Use coarse 1,000 MW blocks to emphasize the discrete toy cliff in assertions.
     price_at_18999 = price_at(
-        18999, edges, prices, boundary="left", bin_size_mw=1000
+        18999, edges, prices, boundary="left", bin_size_mw=CLIFF_CHECK_BLOCK_MW
     )
     price_at_19001 = price_at(
-        19001, edges, prices, boundary="left", bin_size_mw=1000
+        19001, edges, prices, boundary="left", bin_size_mw=CLIFF_CHECK_BLOCK_MW
     )
     assert price_at_19001 > (price_at_18999 * 1.5), (
         "Error: The Price Cliff is missing or too small."
